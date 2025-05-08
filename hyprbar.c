@@ -76,58 +76,55 @@ static gboolean update_wifi_status(gpointer user_data) {
         return G_SOURCE_CONTINUE;
     }
 
-    FILE *fp = popen("iwconfig 2>/dev/null", "r");
-    if (!fp) {
-        gtk_label_set_text(label, "Wi-Fi: Not Available");
-        gtk_widget_set_tooltip_text(widget, "Unavailable");
-        return G_SOURCE_CONTINUE;
-    }
+	FILE *fp = popen("iw dev wlan0 link", "r");
+	if (!fp) {
+	    gtk_label_set_text(label, "Wi-Fi: Not Available");
+	    gtk_widget_set_tooltip_text(widget, "Unavailable");
+	    return G_SOURCE_CONTINUE;
+	}
 
-    char line[256];
-    char ssid[64] = "";
-    char signal_level[64] = "";
-    gboolean connected = FALSE;
+	char line[256];
+	char ssid[64] = "";
+	char signal_level[64] = "";
+	gboolean connected = FALSE;
 
-    while (fgets(line, sizeof(line), fp)) {
-        char *essid = strstr(line, "ESSID:\"");
-        if (essid) {
-            essid += 7;
-            char *end = strchr(essid, '"');
-            // BADPIG
-            if (end && end != essid && strncmp(essid, "off/any", 7) != 0) {
-                *end = '\0';
-                strncpy(ssid, essid, sizeof(ssid));
-                connected = TRUE;
-            }
-        }
+	while (fgets(line, sizeof(line), fp)) {
+	    if (strncmp(line, "Connected to", 12) == 0) {
+		connected = TRUE;
+	    }
 
-        char *signal = strstr(line, "Signal level=");
-        if (signal) {
-            signal += strlen("Signal level=");
-            char *end = strchr(signal, ' ');
-            if (end) *end = '\0';
-            strncpy(signal_level, signal, sizeof(signal_level));
-        }
-    }
+	    char *ssid_ptr = strstr(line, "SSID: ");
+	    if (ssid_ptr) {
+		ssid_ptr += strlen("SSID: ");
+		strncpy(ssid, ssid_ptr, sizeof(ssid) - 1);
+		ssid[strcspn(ssid, "\n")] = 0;
+	    }
 
-    pclose(fp);
+	    char *signal_ptr = strstr(line, "signal: ");
+	    if (signal_ptr) {
+		signal_ptr += strlen("signal: ");
+		strncpy(signal_level, signal_ptr, sizeof(signal_level) - 1);
+		signal_level[strcspn(signal_level, "\n")] = 0;
+	    }
+	}
 
-    if (connected) {
-        char label_text[128];
-        snprintf(label_text, sizeof(label_text), "  \"%s\"", ssid);
-        gtk_label_set_text(label, label_text);
+	pclose(fp);
+    // BADPIG
+	if (connected && ssid[0]) {
+	    char label_text[128];
+	    snprintf(label_text, sizeof(label_text), "  \"%s\"", ssid);
+	    gtk_label_set_text(label, label_text);
 
-        char tooltip[128];
-        snprintf(tooltip, sizeof(tooltip), "  %s", signal_level[0] ? signal_level : "Unknown");
-        gtk_widget_set_tooltip_text(widget, tooltip);
-    }
-    else {
-        gtk_label_set_text(label, " Disconnected");
-        gtk_widget_set_tooltip_text(widget, "");
-    }
+	    char tooltip[128];
+	    snprintf(tooltip, sizeof(tooltip), "  %s", signal_level[0] ? signal_level : "Unknown");
+	    gtk_widget_set_tooltip_text(widget, tooltip);
+	} else {
+	    gtk_label_set_text(label, " Disconnected");
+	    gtk_widget_set_tooltip_text(widget, "");
+	}
 
-    return G_SOURCE_CONTINUE;
-}
+	    return G_SOURCE_CONTINUE;
+	}
 
 // Fungsi untuk mengecek apakah internet terhubung
 static gboolean is_interface_connected() {
