@@ -85,16 +85,27 @@ static GtkWidget* create_terminal_tab() {
     GtkWidget *terminal = vte_terminal_new();
     g_signal_connect(terminal, "button-press-event", G_CALLBACK(on_button_press), terminal);
 
-    char **argv = (char*[]){ "/bin/zsh", NULL };
-    vte_terminal_spawn_async(VTE_TERMINAL(terminal),
-        VTE_PTY_DEFAULT, NULL, argv, NULL,
-        G_SPAWN_DEFAULT, NULL, NULL, NULL, -1, NULL,
-        NULL, NULL);
+    char *cwd = g_get_current_dir();
     //BADPIG
+    char **argv = (char*[]){ "/bin/zsh", NULL };
+    vte_terminal_spawn_async(
+        VTE_TERMINAL(terminal),
+        VTE_PTY_DEFAULT,
+        cwd,
+        argv,
+        NULL,
+        G_SPAWN_DEFAULT,
+        NULL, NULL, NULL, -1,
+        NULL, NULL, NULL
+    );
+
     g_signal_connect(terminal, "child-exited", G_CALLBACK(on_terminal_exit), NULL);
+    //BADPIG
+    g_free(cwd);
 
     return terminal;
 }
+
 
 static void on_new_tab(GtkButton *button, gpointer user_data) {
     GtkNotebook *nb = GTK_NOTEBOOK(user_data);
@@ -104,7 +115,7 @@ static void on_new_tab(GtkButton *button, gpointer user_data) {
     int page_num = gtk_notebook_append_page(nb, terminal, tab_label);
 
     gtk_widget_show_all(terminal);
-    //BADPIG
+    
     gtk_notebook_set_current_page(nb, page_num);
 
     gtk_widget_grab_focus(terminal);
@@ -140,7 +151,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
 }
 
 int main(int argc, char **argv) {
-    GtkApplication *app = gtk_application_new("com.vte.terminal", G_APPLICATION_DEFAULT_FLAGS);
+    GtkApplication *app = gtk_application_new("com.vte.terminal", G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
