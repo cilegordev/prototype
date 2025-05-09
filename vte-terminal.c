@@ -1,6 +1,6 @@
 // dep : gtk3 vte zsh
 // Penulis : Cilegordev & Dibuat bareng DeepSeek 🤖✨
-// import version: 0.1.0-beta
+// import version: 0.2.0-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -27,8 +27,9 @@ static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_nu
 
 static void update_tab_visibility() {
     int page_count = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook));
+    
     gtk_notebook_set_show_tabs(GTK_NOTEBOOK(notebook), page_count > 1);
-
+    
     if (page_count == 0) {
         gtk_window_close(GTK_WINDOW(main_window));
     }
@@ -93,7 +94,7 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
 
         GtkWidget *copy_item = gtk_menu_item_new_with_label("Copy");
         GtkWidget *paste_item = gtk_menu_item_new_with_label("Paste");
-
+	
         g_signal_connect(copy_item, "activate", G_CALLBACK(vte_terminal_copy_clipboard_format), widget);
         g_signal_connect(paste_item, "activate", G_CALLBACK(vte_terminal_paste_clipboard), widget);
 
@@ -119,6 +120,10 @@ static GtkWidget* create_tab_label(GtkWidget *child, TerminalData *data) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     GtkWidget *label = gtk_label_new("Terminal");
     GtkWidget *close_btn = gtk_button_new_with_label("×");
+    
+    //BADPIG
+    g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(gtk_widget_destroy), child);
+    g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(update_tab_visibility), NULL);
 
     data->label = label;
 
@@ -144,16 +149,12 @@ static void on_terminal_exit(VteTerminal *terminal, gint status, gpointer user_d
     if (data->timeout_id) {
         g_source_remove(data->timeout_id);
     }
-    GtkWidget *page = GTK_WIDGET(terminal);
-    GtkNotebook *nb = GTK_NOTEBOOK(notebook);
-    int page_count = gtk_notebook_get_n_pages(nb);
-
-    if (page_count <= 1) {
-        gtk_window_close(GTK_WINDOW(main_window));
-    } else {
-        gtk_widget_destroy(page);
-        update_tab_visibility();
-    }
+    
+    //BADPIG
+    GtkWidget *page = gtk_widget_get_parent(GTK_WIDGET(terminal));
+    gtk_widget_destroy(page);
+    
+    update_tab_visibility();
     
     g_free(data->last_cwd);
     g_free(data);
