@@ -145,6 +145,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_window_set_title(GTK_WINDOW(main_window), "VTE Terminal");
     gtk_window_set_default_size(GTK_WINDOW(main_window), 824, 472);
 
+    gtk_window_set_position(GTK_WINDOW(main_window), GTK_WIN_POS_CENTER);
+
     header = gtk_header_bar_new();
     gtk_header_bar_set_title(GTK_HEADER_BAR(header), "VTE Terminal");
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), TRUE);
