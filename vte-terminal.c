@@ -1,6 +1,6 @@
 // dep : gtk3 vte zsh
-// Penulis : Cilegordev & Dibuat bareng DeepSeek 🤖✨
-// import version: 0.2.0-beta
+// Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
+// import version: 0.3.0-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -25,11 +25,15 @@ static void update_tab_visibility(void);
 static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data);
 static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data);
 
+static void on_selection_changed(VteTerminal *terminal, gpointer user_data) {
+    vte_terminal_copy_clipboard_format(terminal, VTE_FORMAT_TEXT);
+}
+
 static void update_tab_visibility() {
     int page_count = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook));
-    
+
     gtk_notebook_set_show_tabs(GTK_NOTEBOOK(notebook), page_count > 1);
-    
+
     if (page_count == 0) {
         gtk_window_close(GTK_WINDOW(main_window));
     }
@@ -88,15 +92,26 @@ static void on_cwd_changed(VteTerminal *terminal, GParamSpec *pspec, gpointer us
     data->timeout_id = g_timeout_add(100, check_cwd_change, data);
 }
 
+//BADPIG
+static void copy_terminal_text(GtkWidget *widget, gpointer user_data) {
+    VteTerminal *terminal = VTE_TERMINAL(user_data);
+    vte_terminal_copy_clipboard_format(terminal, VTE_FORMAT_TEXT);
+}
+
+static void paste_terminal_text(GtkWidget *widget, gpointer user_data) {
+    VteTerminal *terminal = VTE_TERMINAL(user_data);
+    vte_terminal_paste_clipboard(terminal);
+}
+
 static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
     if (event->type == GDK_BUTTON_PRESS && event->button == 3) {
         GtkWidget *menu = gtk_menu_new();
 
         GtkWidget *copy_item = gtk_menu_item_new_with_label("Copy");
         GtkWidget *paste_item = gtk_menu_item_new_with_label("Paste");
-	
-        g_signal_connect(copy_item, "activate", G_CALLBACK(vte_terminal_copy_clipboard_format), widget);
-        g_signal_connect(paste_item, "activate", G_CALLBACK(vte_terminal_paste_clipboard), widget);
+
+        g_signal_connect(copy_item, "activate", G_CALLBACK(copy_terminal_text), user_data);
+        g_signal_connect(paste_item, "activate", G_CALLBACK(paste_terminal_text), user_data);
 
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), copy_item);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), paste_item);
@@ -120,8 +135,7 @@ static GtkWidget* create_tab_label(GtkWidget *child, TerminalData *data) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     GtkWidget *label = gtk_label_new("Terminal");
     GtkWidget *close_btn = gtk_button_new_with_label("×");
-    
-    //BADPIG
+
     g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(gtk_widget_destroy), child);
     g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(update_tab_visibility), NULL);
 
@@ -137,9 +151,6 @@ static GtkWidget* create_tab_label(GtkWidget *child, TerminalData *data) {
     gtk_box_pack_start(GTK_BOX(box), label, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(box), close_btn, FALSE, FALSE, 0);
 
-    g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(gtk_widget_destroy), child);
-    g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(update_tab_visibility), NULL);
-
     gtk_widget_show_all(box);
     return box;
 }
@@ -149,20 +160,19 @@ static void on_terminal_exit(VteTerminal *terminal, gint status, gpointer user_d
     if (data->timeout_id) {
         g_source_remove(data->timeout_id);
     }
-    
-    //BADPIG
+
     GtkWidget *page = gtk_widget_get_parent(GTK_WIDGET(terminal));
     gtk_widget_destroy(page);
-    
+
     update_tab_visibility();
-    
+
     g_free(data->last_cwd);
     g_free(data);
 }
 
 static void on_terminal_spawn_success(VteTerminal *terminal, GPid pid, GError *error, gpointer user_data) {
     TerminalData *data = (TerminalData *)user_data;
-    
+
     if (error != NULL) {
         g_warning("Failed to spawn terminal: %s", error->message);
         g_error_free(error);
@@ -188,12 +198,13 @@ static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
     *data_ptr = data;
 
     g_object_set_data(G_OBJECT(scrolled_window), "terminal-data", data);
-
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), 
-                                 GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
+    
+    //BADPIG
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
 
     g_signal_connect(terminal, "button-press-event", G_CALLBACK(on_button_press), terminal);
     g_signal_connect(terminal, "notify::current-directory-uri", G_CALLBACK(on_cwd_changed), data);
+    g_signal_connect(terminal, "selection-changed", G_CALLBACK(on_selection_changed), NULL);
 
     char *cwd = g_get_current_dir();
     char **argv = (char*[]){ "/bin/zsh", NULL };
@@ -204,7 +215,7 @@ static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
         argv,
         NULL,
         G_SPAWN_DEFAULT,
-        NULL, NULL, 
+        NULL, NULL,
         NULL, -1,
         NULL,
         on_terminal_spawn_success,
