@@ -1,5 +1,5 @@
 // dep : gtk3 vte zsh
-// Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
+// Penulis : Cilegordev & Dibuat bareng GitHub Copilot 🤖✨
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -81,12 +81,27 @@ static void on_terminal_exit(VteTerminal *terminal, gint status, gpointer user_d
     }
 }
 
+static void on_terminal_spawn_success(VteTerminal *terminal, GPid pid, GError *error, gpointer user_data) {
+    if (error != NULL) {
+        g_warning("Failed to spawn terminal: %s", error->message);
+        g_error_free(error);
+        return;
+    }
+
+    gtk_widget_grab_focus(GTK_WIDGET(terminal));
+}
+
 static GtkWidget* create_terminal_tab() {
+    GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     GtkWidget *terminal = vte_terminal_new();
+    //BADPIG
+    gtk_container_add(GTK_CONTAINER(scrolled_window), terminal);
+
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
+
     g_signal_connect(terminal, "button-press-event", G_CALLBACK(on_button_press), terminal);
 
     char *cwd = g_get_current_dir();
-    //BADPIG
     char **argv = (char*[]){ "/bin/zsh", NULL };
     vte_terminal_spawn_async(
         VTE_TERMINAL(terminal),
@@ -95,15 +110,17 @@ static GtkWidget* create_terminal_tab() {
         argv,
         NULL,
         G_SPAWN_DEFAULT,
-        NULL, NULL, NULL, -1,
-        NULL, NULL, NULL
+        NULL, NULL, 
+        NULL, -1,
+        NULL,
+        on_terminal_spawn_success,
+        NULL
     );
 
     g_signal_connect(terminal, "child-exited", G_CALLBACK(on_terminal_exit), NULL);
-    //BADPIG
     g_free(cwd);
-
-    return terminal;
+    //BADPIG
+    return scrolled_window;
 }
 
 
