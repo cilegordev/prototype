@@ -1,12 +1,29 @@
 // dep : gtk3 vte zsh
-// Penulis : Cilegordev & Dibuat bareng GitHub Copilot 🤖✨
+// Penulis : Cilegordev & Dibuat bareng DeepSeek 🤖✨
+// import version: 0.1.0-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
+#include <unistd.h>
+#include <glib/gstdio.h>
+#include <string.h>
 
 GtkWidget *notebook;
 GtkWidget *main_window;
 GtkWidget *header;
+
+typedef struct {
+    GtkWidget *terminal;
+    GtkWidget *label;
+    GPid pid;
+    gchar *last_cwd;
+    guint timeout_id;
+} TerminalData;
+
+static void update_tab_title(TerminalData *data);
+static void update_tab_visibility(void);
+static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data);
+static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data);
 
 static void update_tab_visibility() {
     int page_count = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook));
@@ -17,12 +34,57 @@ static void update_tab_visibility() {
     }
 }
 
-static void on_copy(GtkMenuItem *item, gpointer user_data) {
-    vte_terminal_copy_clipboard_format(VTE_TERMINAL(user_data), VTE_FORMAT_TEXT);
+static gboolean check_cwd_change(gpointer user_data) {
+    TerminalData *data = (TerminalData *)user_data;
+    if (data->pid <= 0) return G_SOURCE_CONTINUE;
+
+    gchar *proc_path = g_strdup_printf("/proc/%d/cwd", data->pid);
+    gchar *cwd = g_file_read_link(proc_path, NULL);
+    g_free(proc_path);
+
+    if (cwd) {
+        if (data->last_cwd == NULL || strcmp(data->last_cwd, cwd) != 0) {
+            g_free(data->last_cwd);
+            data->last_cwd = cwd;
+            update_tab_title(data);
+        } else {
+            g_free(cwd);
+        }
+    }
+    return G_SOURCE_CONTINUE;
 }
 
-static void on_paste(GtkMenuItem *item, gpointer user_data) {
-    vte_terminal_paste_clipboard(VTE_TERMINAL(user_data));
+static void update_tab_title(TerminalData *data) {
+    if (data->pid > 0) {
+        gchar *basename = NULL;
+        if (data->last_cwd) {
+            basename = g_path_get_basename(data->last_cwd);
+        } else {
+            gchar *proc_path = g_strdup_printf("/proc/%d/cwd", data->pid);
+            gchar *cwd = g_file_read_link(proc_path, NULL);
+            g_free(proc_path);
+
+            if (cwd) {
+                basename = g_path_get_basename(cwd);
+                data->last_cwd = cwd;
+            }
+        }
+
+        if (basename) {
+            gtk_label_set_text(GTK_LABEL(data->label), basename);
+            g_free(basename);
+        } else {
+            gtk_label_set_text(GTK_LABEL(data->label), "Terminal");
+        }
+    }
+}
+
+static void on_cwd_changed(VteTerminal *terminal, GParamSpec *pspec, gpointer user_data) {
+    TerminalData *data = (TerminalData *)user_data;
+    if (data->timeout_id) {
+        g_source_remove(data->timeout_id);
+    }
+    data->timeout_id = g_timeout_add(100, check_cwd_change, data);
 }
 
 static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
@@ -32,8 +94,8 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
         GtkWidget *copy_item = gtk_menu_item_new_with_label("Copy");
         GtkWidget *paste_item = gtk_menu_item_new_with_label("Paste");
 
-        g_signal_connect(copy_item, "activate", G_CALLBACK(on_copy), widget);
-        g_signal_connect(paste_item, "activate", G_CALLBACK(on_paste), widget);
+        g_signal_connect(copy_item, "activate", G_CALLBACK(vte_terminal_copy_clipboard_format), widget);
+        g_signal_connect(paste_item, "activate", G_CALLBACK(vte_terminal_paste_clipboard), widget);
 
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), copy_item);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), paste_item);
@@ -46,10 +108,19 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
     return FALSE;
 }
 
-static GtkWidget* create_tab_label(GtkWidget *child) {
+static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data) {
+    TerminalData *data = g_object_get_data(G_OBJECT(page), "terminal-data");
+    if (data) {
+        update_tab_title(data);
+    }
+}
+
+static GtkWidget* create_tab_label(GtkWidget *child, TerminalData *data) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    GtkWidget *label = gtk_label_new("Tab");
+    GtkWidget *label = gtk_label_new("Terminal");
     GtkWidget *close_btn = gtk_button_new_with_label("×");
+
+    data->label = label;
 
     gtk_button_set_relief(GTK_BUTTON(close_btn), GTK_RELIEF_NONE);
     gtk_widget_set_can_focus(close_btn, FALSE);
@@ -69,6 +140,10 @@ static GtkWidget* create_tab_label(GtkWidget *child) {
 }
 
 static void on_terminal_exit(VteTerminal *terminal, gint status, gpointer user_data) {
+    TerminalData *data = (TerminalData *)user_data;
+    if (data->timeout_id) {
+        g_source_remove(data->timeout_id);
+    }
     GtkWidget *page = GTK_WIDGET(terminal);
     GtkNotebook *nb = GTK_NOTEBOOK(notebook);
     int page_count = gtk_notebook_get_n_pages(nb);
@@ -79,27 +154,45 @@ static void on_terminal_exit(VteTerminal *terminal, gint status, gpointer user_d
         gtk_widget_destroy(page);
         update_tab_visibility();
     }
+    
+    g_free(data->last_cwd);
+    g_free(data);
 }
 
 static void on_terminal_spawn_success(VteTerminal *terminal, GPid pid, GError *error, gpointer user_data) {
+    TerminalData *data = (TerminalData *)user_data;
+    
     if (error != NULL) {
         g_warning("Failed to spawn terminal: %s", error->message);
         g_error_free(error);
         return;
     }
 
+    data->pid = pid;
+    data->timeout_id = g_timeout_add(100, check_cwd_change, data);
+    update_tab_title(data);
     gtk_widget_grab_focus(GTK_WIDGET(terminal));
 }
 
-static GtkWidget* create_terminal_tab() {
+static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
     GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     GtkWidget *terminal = vte_terminal_new();
-    //BADPIG
     gtk_container_add(GTK_CONTAINER(scrolled_window), terminal);
 
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
+    TerminalData *data = g_new0(TerminalData, 1);
+    data->terminal = terminal;
+    data->pid = -1;
+    data->last_cwd = NULL;
+    data->timeout_id = 0;
+    *data_ptr = data;
+
+    g_object_set_data(G_OBJECT(scrolled_window), "terminal-data", data);
+
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), 
+                                 GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
 
     g_signal_connect(terminal, "button-press-event", G_CALLBACK(on_button_press), terminal);
+    g_signal_connect(terminal, "notify::current-directory-uri", G_CALLBACK(on_cwd_changed), data);
 
     char *cwd = g_get_current_dir();
     char **argv = (char*[]){ "/bin/zsh", NULL };
@@ -114,27 +207,25 @@ static GtkWidget* create_terminal_tab() {
         NULL, -1,
         NULL,
         on_terminal_spawn_success,
-        NULL
+        data
     );
 
-    g_signal_connect(terminal, "child-exited", G_CALLBACK(on_terminal_exit), NULL);
+    g_signal_connect(terminal, "child-exited", G_CALLBACK(on_terminal_exit), data);
     g_free(cwd);
-    //BADPIG
+
     return scrolled_window;
 }
 
-
 static void on_new_tab(GtkButton *button, gpointer user_data) {
     GtkNotebook *nb = GTK_NOTEBOOK(user_data);
-    GtkWidget *terminal = create_terminal_tab();
-    GtkWidget *tab_label = create_tab_label(terminal);
+    TerminalData *data = NULL;
+    GtkWidget *terminal = create_terminal_tab(&data);
+    GtkWidget *tab_label = create_tab_label(terminal, data);
 
     int page_num = gtk_notebook_append_page(nb, terminal, tab_label);
 
     gtk_widget_show_all(terminal);
-    
     gtk_notebook_set_current_page(nb, page_num);
-
     gtk_widget_grab_focus(terminal);
 
     update_tab_visibility();
@@ -142,13 +233,13 @@ static void on_new_tab(GtkButton *button, gpointer user_data) {
 
 static void activate(GtkApplication *app, gpointer user_data) {
     main_window = gtk_application_window_new(app);
-    gtk_window_set_title(GTK_WINDOW(main_window), "VTE Terminal");
+    gtk_window_set_title(GTK_WINDOW(main_window), "indoterm-dev");
     gtk_window_set_default_size(GTK_WINDOW(main_window), 824, 472);
 
     gtk_window_set_position(GTK_WINDOW(main_window), GTK_WIN_POS_CENTER);
 
     header = gtk_header_bar_new();
-    gtk_header_bar_set_title(GTK_HEADER_BAR(header), "VTE Terminal");
+    gtk_header_bar_set_title(GTK_HEADER_BAR(header), "indoterm-dev");
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), TRUE);
     gtk_window_set_titlebar(GTK_WINDOW(main_window), header);
 
@@ -163,6 +254,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_container_add(GTK_CONTAINER(main_window), notebook);
 
     g_signal_connect(new_tab_btn, "clicked", G_CALLBACK(on_new_tab), notebook);
+    g_signal_connect(notebook, "switch-page", G_CALLBACK(on_switch_page), NULL);
 
     on_new_tab(GTK_BUTTON(new_tab_btn), notebook);
 
