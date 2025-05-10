@@ -2,7 +2,7 @@
 
 Terminal
 ```
-gcc vte-terminal.c $(pkg-config --cflags --libs gtk+-3.0 vte-2.91) -o vte-terminal
+gcc indoterm.c $(pkg-config --cflags --libs gtk+-3.0 vte-2.91) -o indoterm
 ```
 
 Statusbar
