@@ -1,6 +1,6 @@
 // dep : gtk3 vte zsh
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version: 0.3.0-beta
+// import version: 0.3.1-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -27,6 +27,8 @@ static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_nu
 
 static void on_selection_changed(VteTerminal *terminal, gpointer user_data) {
     vte_terminal_copy_clipboard_format(terminal, VTE_FORMAT_TEXT);
+
+    vte_terminal_set_scroll_on_output(terminal, TRUE);
 }
 
 static void update_tab_visibility() {
@@ -134,7 +136,7 @@ static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_nu
 static GtkWidget* create_tab_label(GtkWidget *child, TerminalData *data) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     GtkWidget *label = gtk_label_new("Terminal");
-    GtkWidget *close_btn = gtk_button_new_with_label("×");
+    GtkWidget *close_btn = gtk_button_new_with_label("⨯");
 
     g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(gtk_widget_destroy), child);
     g_signal_connect_swapped(close_btn, "clicked", G_CALLBACK(update_tab_visibility), NULL);
@@ -189,6 +191,7 @@ static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
     GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     GtkWidget *terminal = vte_terminal_new();
     gtk_container_add(GTK_CONTAINER(scrolled_window), terminal);
+    vte_terminal_set_scroll_on_output(VTE_TERMINAL(terminal), TRUE);
 
     TerminalData *data = g_new0(TerminalData, 1);
     data->terminal = terminal;
@@ -204,7 +207,6 @@ static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
 
     g_signal_connect(terminal, "button-press-event", G_CALLBACK(on_button_press), terminal);
     g_signal_connect(terminal, "notify::current-directory-uri", G_CALLBACK(on_cwd_changed), data);
-    g_signal_connect(terminal, "selection-changed", G_CALLBACK(on_selection_changed), NULL);
 
     char *cwd = g_get_current_dir();
     char **argv = (char*[]){ "/bin/zsh", NULL };
