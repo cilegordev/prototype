@@ -1,6 +1,6 @@
 // dep : gtk3 vte zsh
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version: 0.3.1-beta
+// import version: 0.3.2-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
