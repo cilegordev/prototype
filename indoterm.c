@@ -1,6 +1,6 @@
 // dep : gtk3 vte zsh
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version: 0.3.2-beta
+// import version: 0.4.0-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -190,6 +190,7 @@ static void on_terminal_spawn_success(VteTerminal *terminal, GPid pid, GError *e
 static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
     GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     GtkWidget *terminal = vte_terminal_new();
+    vte_terminal_set_scrollback_lines(VTE_TERMINAL(terminal), -1);
     gtk_container_add(GTK_CONTAINER(scrolled_window), terminal);
     vte_terminal_set_scroll_on_output(VTE_TERMINAL(terminal), TRUE);
 
