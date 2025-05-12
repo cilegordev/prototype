@@ -1,6 +1,6 @@
 // dep : gtk3 vte zsh
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version: 0.4.0-beta
+// import version: 0.5.1-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -28,7 +28,7 @@ static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_nu
 static void on_selection_changed(VteTerminal *terminal, gpointer user_data) {
     vte_terminal_copy_clipboard_format(terminal, VTE_FORMAT_TEXT);
 
-    vte_terminal_set_scroll_on_output(terminal, TRUE);
+    vte_terminal_set_scroll_on_output(terminal, FALSE);
 }
 
 static void update_tab_visibility() {
@@ -100,9 +100,23 @@ static void copy_terminal_text(GtkWidget *widget, gpointer user_data) {
     vte_terminal_copy_clipboard_format(terminal, VTE_FORMAT_TEXT);
 }
 
+static gboolean scroll_terminal_bottom(gpointer user_data) {
+    VteTerminal *terminal = VTE_TERMINAL(user_data);
+    GtkAdjustment *adjustment = gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(terminal));
+
+    if (adjustment) {
+        gdouble upper = gtk_adjustment_get_upper(adjustment);
+        gdouble page_size = gtk_adjustment_get_page_size(adjustment);
+        gtk_adjustment_set_value(adjustment, upper - page_size);
+    }
+
+    return G_SOURCE_REMOVE;
+}
+
 static void paste_terminal_text(GtkWidget *widget, gpointer user_data) {
     VteTerminal *terminal = VTE_TERMINAL(user_data);
     vte_terminal_paste_clipboard(terminal);
+    g_idle_add(scroll_terminal_bottom, terminal);
 }
 
 static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
@@ -192,7 +206,8 @@ static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
     GtkWidget *terminal = vte_terminal_new();
     vte_terminal_set_scrollback_lines(VTE_TERMINAL(terminal), -1);
     gtk_container_add(GTK_CONTAINER(scrolled_window), terminal);
-    vte_terminal_set_scroll_on_output(VTE_TERMINAL(terminal), TRUE);
+    vte_terminal_set_scroll_on_output(VTE_TERMINAL(terminal), FALSE);
+    
 
     TerminalData *data = g_new0(TerminalData, 1);
     data->terminal = terminal;
@@ -250,6 +265,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     main_window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(main_window), "indoterm-dev");
     gtk_window_set_default_size(GTK_WINDOW(main_window), 824, 472);
+    gtk_window_set_icon_name(GTK_WINDOW(main_window), "utilities-terminal");
 
     gtk_window_set_position(GTK_WINDOW(main_window), GTK_WIN_POS_CENTER);
 
