@@ -1,6 +1,6 @@
-// dep : gtk3 vte zsh
+// dep : gtk3 vte
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version: 0.5.1-beta
+// import version: 0.5.2-beta
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -208,7 +208,6 @@ static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
     gtk_container_add(GTK_CONTAINER(scrolled_window), terminal);
     vte_terminal_set_scroll_on_output(VTE_TERMINAL(terminal), FALSE);
     
-
     TerminalData *data = g_new0(TerminalData, 1);
     data->terminal = terminal;
     data->pid = -1;
@@ -225,7 +224,11 @@ static GtkWidget* create_terminal_tab(TerminalData **data_ptr) {
     g_signal_connect(terminal, "notify::current-directory-uri", G_CALLBACK(on_cwd_changed), data);
 
     char *cwd = g_get_current_dir();
-    char **argv = (char*[]){ "/bin/zsh", NULL };
+    const char *user_shell = g_getenv("SHELL");
+    if (!user_shell) {
+        user_shell = "/bin/sh";
+    }
+    char *argv[] = { (char *)user_shell, NULL };
     vte_terminal_spawn_async(
         VTE_TERMINAL(terminal),
         VTE_PTY_DEFAULT,
