@@ -11,6 +11,8 @@ GtkWidget *notebook;
 GtkWidget *main_window;
 GtkWidget *header;
 
+static gboolean is_fullscreen = FALSE;
+
 typedef struct {
     GtkWidget *terminal;
     GtkWidget *label;
@@ -23,6 +25,20 @@ static void update_tab_title(TerminalData *data);
 static void update_tab_visibility(void);
 static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data);
 static void on_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data);
+
+static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data) {
+    if (event->keyval == GDK_KEY_F11) {
+        if (is_fullscreen) {
+            gtk_window_unfullscreen(GTK_WINDOW(main_window));
+            is_fullscreen = FALSE;
+        } else {
+            gtk_window_fullscreen(GTK_WINDOW(main_window));
+            is_fullscreen = TRUE;
+        }
+        return TRUE;
+    }
+    return FALSE;
+}
 
 static void on_selection_changed(VteTerminal *terminal, gpointer user_data) {
     vte_terminal_copy_clipboard_format(terminal, VTE_FORMAT_TEXT);
@@ -234,7 +250,7 @@ static void tentang_terminal(GtkButton *button, gpointer user_data) {
 
     GtkWidget *header = gtk_header_bar_new();
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), TRUE);
-    gtk_header_bar_set_title(GTK_HEADER_BAR(header), "indoterm v1.0.0");
+    gtk_header_bar_set_title(GTK_HEADER_BAR(header), "indoterm v1.0.1");
     gtk_window_set_titlebar(GTK_WINDOW(dialog), header);
 
     GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
@@ -306,6 +322,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_container_add(GTK_CONTAINER(main_window), notebook);
     g_signal_connect(new_tab_btn, "clicked", G_CALLBACK(on_new_tab), notebook);
     g_signal_connect(notebook, "switch-page", G_CALLBACK(on_switch_page), NULL);
+    g_signal_connect(main_window, "key-press-event", G_CALLBACK(on_key_press), NULL);
+
     on_new_tab(GTK_BUTTON(new_tab_btn), notebook);
     gtk_widget_show_all(main_window);
 }
