@@ -18,7 +18,7 @@ static gboolean update_time_label(gpointer user_data) {
     time_t now = time(NULL);
     struct tm *tm_now = localtime(&now);
 
-    strftime(time_buf, sizeof(time_buf), " %H:%M \"WIB\"", tm_now);
+    strftime(time_buf, sizeof(time_buf), " %H:%M \"WIB\"", tm_now); // ganti "WIB" dengan lokasi zona waktu kamu saat ini contoh: "UTC"
     gtk_label_set_text(label, time_buf);
 
     strftime(tooltip_buf, sizeof(tooltip_buf), " %A, %d %B %Y", tm_now);
@@ -347,7 +347,7 @@ static gboolean update_resource_usage(GtkLabel *label) {
 
     FILE *fp = fopen("/proc/stat", "r");
     if (!fp) {
-        gtk_label_set_text(label, "CPU: N/A GPU: N/A RAM: N/A");
+        gtk_label_set_text(label, "CPU: N/A GPU: N/A RAM: N/A SWAP: N/A");
         return G_SOURCE_CONTINUE;
     }
 
@@ -371,28 +371,37 @@ static gboolean update_resource_usage(GtkLabel *label) {
     prev_idle = idle;
     prev_total = total;
 
-    FILE *fp_ram = popen("free | grep Mem | awk '{print int($3*100/$2)}'", "r");
     char ram_usage[16] = "N/A";
+    FILE *fp_ram = popen("free | grep Mem | awk '{print int($3*100/$2)}'", "r");
     if (fp_ram && fgets(ram_usage, sizeof(ram_usage), fp_ram)) {
         ram_usage[strcspn(ram_usage, "\n")] = 0;
     }
     if (fp_ram) fclose(fp_ram);
 
-    FILE *fp_gpu = fopen("/sys/class/drm/card0/device/gpu_busy_percent", "r");
+    char swap_usage[16] = "N/A";
+    FILE *fp_swap = popen("free | grep Swap | awk '{if ($2 > 0) print int($3*100/$2); else print \"0\"}'", "r");
+    if (fp_swap && fgets(swap_usage, sizeof(swap_usage), fp_swap)) {
+        swap_usage[strcspn(swap_usage, "\n")] = 0;
+    }
+    if (fp_swap) fclose(fp_swap);
+
     char gpu_usage[16] = "N/A";
+    FILE *fp_gpu = fopen("/sys/class/drm/card0/device/gpu_busy_percent", "r");
     if (fp_gpu && fgets(gpu_usage, sizeof(gpu_usage), fp_gpu)) {
         gpu_usage[strcspn(gpu_usage, "\n")] = 0;
     }
     if (fp_gpu) fclose(fp_gpu);
 
-    FILE *fp_disk = popen("df / | grep / | awk '{print $5}'", "r");
     char disk_usage[16] = "N/A";
+    FILE *fp_disk = popen("df / | grep / | awk '{print $5}'", "r");
     if (fp_disk && fgets(disk_usage, sizeof(disk_usage), fp_disk)) {
         disk_usage[strcspn(disk_usage, "\n")] = 0;
     }
     if (fp_disk) fclose(fp_disk);
 
-    snprintf(buf, sizeof(buf), " %.0f%%   %s%%   %s%%   %s", cpu_usage, gpu_usage, ram_usage, disk_usage);
+    snprintf(buf, sizeof(buf),
+             " %.0f%%   %s%%   %s%%   %s%%   %s",
+             cpu_usage, gpu_usage, ram_usage, swap_usage, disk_usage);
     gtk_label_set_text(label, buf);
 
     return G_SOURCE_CONTINUE;
