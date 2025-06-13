@@ -32,10 +32,16 @@ static gboolean update_wifi_status(gpointer user_data) {
     GtkLabel *label = GTK_LABEL(user_data);
     GtkWidget *widget = GTK_WIDGET(label);
 
-    FILE *fp_eth = popen("ip addr show eth0 2>/dev/null", "r");
-    gboolean eth_connected = FALSE;
+    const char *eth_interfaces[] = {"eth0", "enp3s0f3u0", "enp3s0f3u1", "enp3s0f3u2", "enp3s0f3u3"};
     char eth_ip[64] = "";
-    if (fp_eth) {
+    gboolean eth_connected = FALSE;
+
+    for (int i = 0; i < sizeof(eth_interfaces)/sizeof(eth_interfaces[0]); i++) {
+        char cmd[128];
+        snprintf(cmd, sizeof(cmd), "ip addr show %s 2>/dev/null", eth_interfaces[i]);
+        FILE *fp_eth = popen(cmd, "r");
+        if (!fp_eth) continue;
+
         char line[256];
         while (fgets(line, sizeof(line), fp_eth)) {
             if (strstr(line, "inet ")) {
@@ -47,6 +53,7 @@ static gboolean update_wifi_status(gpointer user_data) {
             }
         }
         pclose(fp_eth);
+        if (eth_connected) break;
     }
 
     if (eth_connected) {
@@ -75,60 +82,66 @@ static gboolean update_wifi_status(gpointer user_data) {
         gtk_widget_set_tooltip_text(widget, "");
         return G_SOURCE_CONTINUE;
     }
+    const char *wifi_interfaces[] = {"wlan0", "wlp2s0"};
+    char ssid[64] = "";
+    char signal_level[64] = "";
+    gboolean connected = FALSE;
 
-	FILE *fp = popen("iw dev wlan0 link", "r");
-	if (!fp) {
-	    gtk_label_set_text(label, "Wi-Fi: Not Available");
-	    gtk_widget_set_tooltip_text(widget, "Unavailable");
-	    return G_SOURCE_CONTINUE;
-	}
+    for (int i = 0; i < sizeof(wifi_interfaces)/sizeof(wifi_interfaces[0]); i++) {
+        char cmd[128];
+        snprintf(cmd, sizeof(cmd), "iw dev %s link", wifi_interfaces[i]);
+        FILE *fp = popen(cmd, "r");
+        if (!fp) continue;
 
-	char line[256];
-	char ssid[64] = "";
-	char signal_level[64] = "";
-	gboolean connected = FALSE;
+        char line[256];
+        while (fgets(line, sizeof(line), fp)) {
+            if (strncmp(line, "Connected to", 12) == 0) {
+                connected = TRUE;
+            }
 
-	while (fgets(line, sizeof(line), fp)) {
-	    if (strncmp(line, "Connected to", 12) == 0) {
-		connected = TRUE;
-	    }
+            char *ssid_ptr = strstr(line, "SSID: ");
+            if (ssid_ptr) {
+                ssid_ptr += strlen("SSID: ");
+                strncpy(ssid, ssid_ptr, sizeof(ssid) - 1);
+                ssid[strcspn(ssid, "\n")] = 0;
+            }
 
-	    char *ssid_ptr = strstr(line, "SSID: ");
-	    if (ssid_ptr) {
-		ssid_ptr += strlen("SSID: ");
-		strncpy(ssid, ssid_ptr, sizeof(ssid) - 1);
-		ssid[strcspn(ssid, "\n")] = 0;
-	    }
+            char *signal_ptr = strstr(line, "signal: ");
+            if (signal_ptr) {
+                signal_ptr += strlen("signal: ");
+                strncpy(signal_level, signal_ptr, sizeof(signal_level) - 1);
+                signal_level[strcspn(signal_level, "\n")] = 0;
+            }
+        }
 
-	    char *signal_ptr = strstr(line, "signal: ");
-	    if (signal_ptr) {
-		signal_ptr += strlen("signal: ");
-		strncpy(signal_level, signal_ptr, sizeof(signal_level) - 1);
-		signal_level[strcspn(signal_level, "\n")] = 0;
-	    }
-	}
+        pclose(fp);
+        if (connected && ssid[0]) break;
+    }
 
-	pclose(fp);
-    // BADPIG
-	if (connected && ssid[0]) {
-	    char label_text[128];
-	    snprintf(label_text, sizeof(label_text), "  \"%s\"", ssid);
-	    gtk_label_set_text(label, label_text);
+    if (connected && ssid[0]) {
+        char label_text[128];
+        snprintf(label_text, sizeof(label_text), "  \"%s\"", ssid);
+        gtk_label_set_text(label, label_text);
 
-	    char tooltip[128];
-	    snprintf(tooltip, sizeof(tooltip), "  %s", signal_level[0] ? signal_level : "Unknown");
-	    gtk_widget_set_tooltip_text(widget, tooltip);
-	} else {
-	    gtk_label_set_text(label, " Disconnected");
-	    gtk_widget_set_tooltip_text(widget, "");
-	}
+        char tooltip[128];
+        snprintf(tooltip, sizeof(tooltip), "  %s", signal_level[0] ? signal_level : "Unknown");
+        gtk_widget_set_tooltip_text(widget, tooltip);
+    } else {
+        gtk_label_set_text(label, " Disconnected");
+        gtk_widget_set_tooltip_text(widget, "");
+    }
 
-	    return G_SOURCE_CONTINUE;
-	}
+    return G_SOURCE_CONTINUE;
+}
 
 // Fungsi untuk mengecek apakah internet terhubung
 static gboolean is_interface_connected() {
-    const char *interfaces[] = {"wlan0", "eth0", "usb0"};
+    const char *interfaces[] = {
+        "wlan0", "wlp2s0",
+        "eth0", "enp3s0f3u0",
+        "enp3s0f3u1", "enp3s0f3u2",
+        "enp3s0f3u3", "usb0"
+    };
     char path[256];
     char state[32];
 
@@ -142,8 +155,7 @@ static gboolean is_interface_connected() {
             fclose(fp);
             if (strcmp(state, "up") == 0)
                 return TRUE;
-        }
-        else {
+        } else {
             fclose(fp);
         }
     }
@@ -186,7 +198,6 @@ static gboolean update_network_speed(gpointer user_data) {
             if (fgets(state, sizeof(state), state_fp)) {
                 state[strcspn(state, "\n")] = 0;
                 fclose(state_fp);
-                // BADPIG
                 if (strcmp(state, "up") != 0 && strcmp(state, "unknown") != 0)
                     continue;
             }
