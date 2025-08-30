@@ -32,7 +32,7 @@ static gboolean update_wifi_status(gpointer user_data) {
     GtkLabel *label = GTK_LABEL(user_data);
     GtkWidget *widget = GTK_WIDGET(label);
 
-    const char *eth_interfaces[] = {"eth0", "enp3s0f3u0", "enp3s0f3u1", "enp3s0f3u2", "enp3s0f3u3"};
+    const char *eth_interfaces[] = {"eth0", "eth1", "enp3s0f3u0", "enp3s0f3u1", "enp3s0f3u2", "enp3s0f3u3"};
     char eth_ip[64] = "";
     gboolean eth_connected = FALSE;
 
@@ -60,7 +60,7 @@ static gboolean update_wifi_status(gpointer user_data) {
         char label_text[128];
         snprintf(label_text, sizeof(label_text), " \"%s\"", eth_ip);
         gtk_label_set_text(label, label_text);
-        gtk_widget_set_tooltip_text(widget, "");
+        gtk_widget_set_tooltip_text(widget, "🌐");
         return G_SOURCE_CONTINUE;
     }
 
@@ -137,10 +137,7 @@ static gboolean update_wifi_status(gpointer user_data) {
 // Fungsi untuk mengecek apakah internet terhubung
 static gboolean is_interface_connected() {
     const char *interfaces[] = {
-        "wlan0", "wlp2s0",
-        "eth0", "enp3s0f3u0",
-        "enp3s0f3u1", "enp3s0f3u2",
-        "enp3s0f3u3", "usb0"
+        "wlan0", "wlp2s0", "eth0", "eth1", "enp3s0f3u0", "enp3s0f3u1", "enp3s0f3u2", "enp3s0f3u3", "usb0"
     };
     char path[256];
     char state[32];
@@ -256,7 +253,12 @@ static gboolean update_battery_status(gpointer user_data) {
     FILE *fp;
     char path[1035];
 
-    fp = popen("cat /sys/class/power_supply/BAT0/capacity", "r");
+    if (access("/sys/class/power_supply/BAT0/capacity", F_OK) != 0) {
+        gtk_label_set_text(label, "-PC");
+        return G_SOURCE_CONTINUE;
+    }
+
+    fp = fopen("/sys/class/power_supply/BAT0/capacity", "r");
     if (fp == NULL) {
         gtk_label_set_text(label, " Not Available");
         return G_SOURCE_CONTINUE;
@@ -266,7 +268,7 @@ static gboolean update_battery_status(gpointer user_data) {
         path[strcspn(path, "\n")] = 0;
         fclose(fp);
 
-        fp = popen("cat /sys/class/power_supply/ADP0/online", "r");
+        fp = fopen("/sys/class/power_supply/ADP0/online", "r");
         if (fp == NULL) {
             gtk_label_set_text(label, " Not Available");
             return G_SOURCE_CONTINUE;
@@ -418,7 +420,7 @@ static gboolean update_resource_usage(GtkLabel *label) {
     return G_SOURCE_CONTINUE;
 }
 
-// Fungsi untuk informasi kernel linux
+// Fungsi untuk informasi versi dari kernel linux
 static gboolean update_linux_version(gpointer user_data) {
     GtkLabel *label = GTK_LABEL(user_data);
     FILE *fp;
@@ -451,7 +453,13 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_window_set_title(GTK_WINDOW(window), "hyprbar");
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
     gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
-    gtk_window_set_default_size(GTK_WINDOW(window), 1366, 32);
+
+    GdkDisplay *display = gdk_display_get_default();
+    GListModel *monitors = gdk_display_get_monitors(display);
+    GdkMonitor *monitor = g_list_model_get_item(monitors, 0);
+    GdkRectangle geometry;
+    gdk_monitor_get_geometry(monitor, &geometry);
+    gtk_window_set_default_size(GTK_WINDOW(window), geometry.width, 32);
 
     gtk_layer_init_for_window(GTK_WINDOW(window));
     gtk_layer_set_layer(GTK_WINDOW(window), GTK_LAYER_SHELL_LAYER_TOP);
@@ -465,38 +473,30 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_set_margin_end(box, 10);
     gtk_widget_set_margin_top(box, 5);
     gtk_widget_set_margin_bottom(box, 5);
-
-    GtkWidget *right_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_set_halign(right_box, GTK_ALIGN_END);
-
     GtkWidget *left_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_set_halign(left_box, GTK_ALIGN_END);
+    GtkWidget *right_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_hexpand(left_box, TRUE);
+    gtk_widget_set_halign(right_box, GTK_ALIGN_END);
 
     GtkWidget *time_label = gtk_label_new("Clock");
     gtk_box_append(GTK_BOX(left_box), time_label);
-
     GtkWidget *wifi_label = gtk_label_new("Wi-Fi");
     gtk_box_append(GTK_BOX(left_box), wifi_label);
-
     GtkWidget *net_label = gtk_label_new("Network");
     gtk_box_append(GTK_BOX(left_box), net_label);
-
-    GtkWidget *battery_label = gtk_label_new("Battery");
+    GtkWidget *battery_label = gtk_label_new("Power");
     gtk_box_append(GTK_BOX(left_box), battery_label);
-
     GtkWidget *volume_label = gtk_label_new("Sound");
     gtk_box_append(GTK_BOX(left_box), volume_label);
-
     GtkWidget *brightness_label = gtk_label_new("Brightness");
     gtk_box_append(GTK_BOX(left_box), brightness_label);
-
     GtkWidget *resource_label = gtk_label_new("Hardware");
     gtk_box_append(GTK_BOX(left_box), resource_label);
-
     GtkWidget *linux_label = gtk_label_new("Linux");
-    gtk_box_append(GTK_BOX(left_box), linux_label);
+    gtk_box_append(GTK_BOX(right_box), linux_label);
 
     gtk_box_append(GTK_BOX(box), left_box);
+    gtk_box_append(GTK_BOX(box), right_box);
     gtk_window_set_child(GTK_WINDOW(window), box);
 
     g_timeout_add_seconds(1, (GSourceFunc)update_time_label, time_label);
