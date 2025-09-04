@@ -1,5 +1,6 @@
 // dep : gtk4 gtk4-layer-shell fontawesome iw pulseaudio brightnessctl radeontop
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
+// import version 1.0.0
 
 #include <gtk/gtk.h>
 #include <gtk-layer-shell/gtk-layer-shell.h>
@@ -18,7 +19,7 @@ static gboolean update_time_label(gpointer user_data) {
     time_t now = time(NULL);
     struct tm *tm_now = localtime(&now);
 
-    strftime(time_buf, sizeof(time_buf), " %H:%M \"WIB\"", tm_now); // ganti "WIB" dengan lokasi zona waktu kamu saat ini contoh: "UTC"
+    strftime(time_buf, sizeof(time_buf), " %H:%M", tm_now);
     gtk_label_set_text(label, time_buf);
 
     strftime(tooltip_buf, sizeof(tooltip_buf), " %A, %d %B %Y", tm_now);
@@ -32,33 +33,28 @@ static gboolean update_wifi_status(gpointer user_data) {
     GtkLabel *label = GTK_LABEL(user_data);
     GtkWidget *widget = GTK_WIDGET(label);
 
-    const char *eth_interfaces[] = {"eth0", "eth1", "enp3s0f3u0", "enp3s0f3u1", "enp3s0f3u2", "enp3s0f3u3"};
-    char eth_ip[64] = "";
+    FILE *fp_eth = popen("ip -o -4 addr show | awk '{print $2,$4}'", "r");
+    char iface[64], ip[64];
     gboolean eth_connected = FALSE;
 
-    for (int i = 0; i < sizeof(eth_interfaces)/sizeof(eth_interfaces[0]); i++) {
-        char cmd[128];
-        snprintf(cmd, sizeof(cmd), "ip addr show %s 2>/dev/null", eth_interfaces[i]);
-        FILE *fp_eth = popen(cmd, "r");
-        if (!fp_eth) continue;
-
-        char line[256];
-        while (fgets(line, sizeof(line), fp_eth)) {
-            if (strstr(line, "inet ")) {
-                sscanf(line, " inet %63s", eth_ip);
-                char *slash = strchr(eth_ip, '/');
+    if (fp_eth) {
+        while (fscanf(fp_eth, "%63s %63s", iface, ip) == 2) {
+            if (strncmp(iface, "eth", 3) == 0 ||
+                strncmp(iface, "enp", 3) == 0 ||
+                strncmp(iface, "ens", 3) == 3 ||
+                strncmp(iface, "enx", 3) == 0) {
+                char *slash = strchr(ip, '/');
                 if (slash) *slash = '\0';
                 eth_connected = TRUE;
                 break;
             }
         }
         pclose(fp_eth);
-        if (eth_connected) break;
     }
 
     if (eth_connected) {
         char label_text[128];
-        snprintf(label_text, sizeof(label_text), " \"%s\"", eth_ip);
+        snprintf(label_text, sizeof(label_text), " \"%s\"", ip);
         gtk_label_set_text(label, label_text);
         gtk_widget_set_tooltip_text(widget, "🌐");
         return G_SOURCE_CONTINUE;
@@ -82,40 +78,51 @@ static gboolean update_wifi_status(gpointer user_data) {
         gtk_widget_set_tooltip_text(widget, "");
         return G_SOURCE_CONTINUE;
     }
-    const char *wifi_interfaces[] = {"wlan0", "wlp2s0"};
+
+    FILE *fp_wifi = popen("ls /sys/class/net", "r");
+    gboolean connected = FALSE;
     char ssid[64] = "";
     char signal_level[64] = "";
-    gboolean connected = FALSE;
 
-    for (int i = 0; i < sizeof(wifi_interfaces)/sizeof(wifi_interfaces[0]); i++) {
-        char cmd[128];
-        snprintf(cmd, sizeof(cmd), "iw dev %s link", wifi_interfaces[i]);
-        FILE *fp = popen(cmd, "r");
-        if (!fp) continue;
+    if (fp_wifi) {
+        char ifname[64];
+        while (fgets(ifname, sizeof(ifname), fp_wifi)) {
+            ifname[strcspn(ifname, "\n")] = 0;
 
-        char line[256];
-        while (fgets(line, sizeof(line), fp)) {
-            if (strncmp(line, "Connected to", 12) == 0) {
-                connected = TRUE;
+            if (strncmp(ifname, "wlan", 4) != 0 &&
+                strncmp(ifname, "wlp", 3) != 0)
+                continue;
+
+            char cmd[128];
+            snprintf(cmd, sizeof(cmd), "iw dev %s link", ifname);
+            FILE *fp = popen(cmd, "r");
+            if (!fp) continue;
+
+            char line[256];
+            while (fgets(line, sizeof(line), fp)) {
+                if (strncmp(line, "Connected to", 12) == 0) {
+                    connected = TRUE;
+                }
+
+                char *ssid_ptr = strstr(line, "SSID: ");
+                if (ssid_ptr) {
+                    ssid_ptr += strlen("SSID: ");
+                    strncpy(ssid, ssid_ptr, sizeof(ssid) - 1);
+                    ssid[strcspn(ssid, "\n")] = 0;
+                }
+
+                char *signal_ptr = strstr(line, "signal: ");
+                if (signal_ptr) {
+                    signal_ptr += strlen("signal: ");
+                    strncpy(signal_level, signal_ptr, sizeof(signal_level) - 1);
+                    signal_level[strcspn(signal_level, "\n")] = 0;
+                }
             }
 
-            char *ssid_ptr = strstr(line, "SSID: ");
-            if (ssid_ptr) {
-                ssid_ptr += strlen("SSID: ");
-                strncpy(ssid, ssid_ptr, sizeof(ssid) - 1);
-                ssid[strcspn(ssid, "\n")] = 0;
-            }
-
-            char *signal_ptr = strstr(line, "signal: ");
-            if (signal_ptr) {
-                signal_ptr += strlen("signal: ");
-                strncpy(signal_level, signal_ptr, sizeof(signal_level) - 1);
-                signal_level[strcspn(signal_level, "\n")] = 0;
-            }
+            pclose(fp);
+            if (connected && ssid[0]) break;
         }
-
-        pclose(fp);
-        if (connected && ssid[0]) break;
+        pclose(fp_wifi);
     }
 
     if (connected && ssid[0]) {
@@ -136,27 +143,34 @@ static gboolean update_wifi_status(gpointer user_data) {
 
 // Fungsi untuk mengecek apakah internet terhubung
 static gboolean is_interface_connected() {
-    const char *interfaces[] = {
-        "wlan0", "wlp2s0", "eth0", "eth1", "enp3s0f3u0", "enp3s0f3u1", "enp3s0f3u2", "enp3s0f3u3", "usb0"
-    };
-    char path[256];
-    char state[32];
+    FILE *fp = popen("ls /sys/class/net", "r");
+    if (!fp) return FALSE;
 
-    for (int i = 0; i < sizeof(interfaces)/sizeof(interfaces[0]); i++) {
-        snprintf(path, sizeof(path), "/sys/class/net/%s/operstate", interfaces[i]);
-        FILE *fp = fopen(path, "r");
-        if (!fp) continue;
+    char ifname[64];
+    while (fgets(ifname, sizeof(ifname), fp)) {
+        ifname[strcspn(ifname, "\n")] = 0;
 
-        if (fgets(state, sizeof(state), fp)) {
+        if (strcmp(ifname, "lo") == 0)
+            continue;
+
+        char path[256], state[32];
+        snprintf(path, sizeof(path), "/sys/class/net/%s/operstate", ifname);
+        FILE *fp_state = fopen(path, "r");
+        if (!fp_state) continue;
+
+        if (fgets(state, sizeof(state), fp_state)) {
             state[strcspn(state, "\n")] = 0;
-            fclose(fp);
-            if (strcmp(state, "up") == 0)
+            fclose(fp_state);
+            if (strcmp(state, "up") == 0) {
+                pclose(fp);
                 return TRUE;
+            }
         } else {
-            fclose(fp);
+            fclose(fp_state);
         }
     }
 
+    pclose(fp);
     return FALSE;
 }
 
