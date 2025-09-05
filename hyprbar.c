@@ -1,6 +1,6 @@
 // dep : gtk4 gtk4-layer-shell fontawesome iw pulseaudio brightnessctl radeontop
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version 1.0.0
+// import version 1.0.1
 
 #include <gtk/gtk.h>
 #include <gtk-layer-shell/gtk-layer-shell.h>
@@ -319,6 +319,7 @@ static gboolean update_battery_status(gpointer user_data) {
 // Fungsi untuk output suara
 static gboolean update_volume_status(gpointer user_data) {
     GtkLabel *label = GTK_LABEL(user_data);
+
     FILE *fp = popen("pactl get-sink-volume @DEFAULT_SINK@ | grep -oP '\\d+%' | head -1", "r");
     if (!fp) {
         gtk_label_set_text(label, " N/A");
@@ -328,16 +329,29 @@ static gboolean update_volume_status(gpointer user_data) {
     char volume[16];
     if (fgets(volume, sizeof(volume), fp) != NULL) {
         volume[strcspn(volume, "\n")] = 0;
-        char label_text[64];
-        snprintf(label_text, sizeof(label_text), "  %s", volume);
-        gtk_label_set_text(label, label_text);
     }
-
-    else {
-        gtk_label_set_text(label, " N/A");
-    }
-
     pclose(fp);
+
+    fp = popen("pactl get-sink-mute @DEFAULT_SINK@ | awk '{print $2}'", "r");
+    if (!fp) {
+        gtk_label_set_text(label, " N/A");
+        return G_SOURCE_CONTINUE;
+    }
+
+    char mute_status[8];
+    if (fgets(mute_status, sizeof(mute_status), fp) != NULL) {
+        mute_status[strcspn(mute_status, "\n")] = 0;
+    }
+    pclose(fp);
+
+    char label_text[64];
+    if (strcmp(mute_status, "yes") == 0) {
+        snprintf(label_text, sizeof(label_text), " Mute");
+    } else {
+        snprintf(label_text, sizeof(label_text), "  %s", volume);
+    }
+
+    gtk_label_set_text(label, label_text);
     return G_SOURCE_CONTINUE;
 }
 
@@ -374,7 +388,7 @@ static gboolean update_resource_usage(GtkLabel *label) {
 
     FILE *fp = fopen("/proc/stat", "r");
     if (!fp) {
-        gtk_label_set_text(label, "CPU: N/A GPU: N/A RAM: N/A SWAP: N/A");
+        gtk_label_set_text(label, "CPU: N/A GPU: N/A RAM: N/A SWAP: N/A DISK: N/A");
         return G_SOURCE_CONTINUE;
     }
 
@@ -399,18 +413,25 @@ static gboolean update_resource_usage(GtkLabel *label) {
     prev_total = total;
 
     char ram_usage[16] = "N/A";
-    FILE *fp_ram = popen("free | grep Mem | awk '{print int($3*100/$2)}'", "r");
+    FILE *fp_ram = popen("free | awk '/Mem:/ {print int($3*100/$2)}'", "r");
     if (fp_ram && fgets(ram_usage, sizeof(ram_usage), fp_ram)) {
         ram_usage[strcspn(ram_usage, "\n")] = 0;
     }
     if (fp_ram) fclose(fp_ram);
 
     char swap_usage[16] = "N/A";
-    FILE *fp_swap = popen("free | grep Swap | awk '{if ($2 > 0) print int($3*100/$2); else print \"0\"}'", "r");
+    FILE *fp_swap = popen("free | awk '/Swap:/ {if ($2 == 0) print \"Off\"; else print int($3*100/$2)}'", "r");
     if (fp_swap && fgets(swap_usage, sizeof(swap_usage), fp_swap)) {
         swap_usage[strcspn(swap_usage, "\n")] = 0;
     }
     if (fp_swap) fclose(fp_swap);
+
+    char swap_text[32];
+    if (strcmp(swap_usage, "Off") == 0) {
+        snprintf(swap_text, sizeof(swap_text), "Off");
+    } else {
+        snprintf(swap_text, sizeof(swap_text), "%s%%", swap_usage);
+    }
 
     char gpu_usage[16] = "N/A";
     FILE *fp_gpu = fopen("/sys/class/drm/card0/device/gpu_busy_percent", "r");
@@ -420,15 +441,16 @@ static gboolean update_resource_usage(GtkLabel *label) {
     if (fp_gpu) fclose(fp_gpu);
 
     char disk_usage[16] = "N/A";
-    FILE *fp_disk = popen("df / | grep / | awk '{print $5}'", "r");
+    FILE *fp_disk = popen("df / | awk 'NR==2 {print $5}'", "r");
     if (fp_disk && fgets(disk_usage, sizeof(disk_usage), fp_disk)) {
         disk_usage[strcspn(disk_usage, "\n")] = 0;
     }
     if (fp_disk) fclose(fp_disk);
 
     snprintf(buf, sizeof(buf),
-             " %.0f%%   %s%%   %s%%   %s%%   %s",
-             cpu_usage, gpu_usage, ram_usage, swap_usage, disk_usage);
+             " %.0f%%   %s%%   %s%%   %s   %s",
+             cpu_usage, gpu_usage, ram_usage, swap_text, disk_usage);
+
     gtk_label_set_text(label, buf);
 
     return G_SOURCE_CONTINUE;
