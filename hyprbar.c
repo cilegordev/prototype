@@ -1,6 +1,6 @@
 // dep : gtk4 gtk4-layer-shell fontawesome iw pulseaudio brightnessctl radeontop
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version 1.0.1
+// import version 1.0.2
 
 #include <gtk/gtk.h>
 #include <gtk-layer-shell/gtk-layer-shell.h>
@@ -322,26 +322,32 @@ static gboolean update_volume_status(gpointer user_data) {
 
     FILE *fp = popen("pactl get-sink-volume @DEFAULT_SINK@ | grep -oP '\\d+%' | head -1", "r");
     if (!fp) {
-        gtk_label_set_text(label, " N/A");
+        gtk_label_set_text(label, " Off");
         return G_SOURCE_CONTINUE;
     }
 
     char volume[16];
-    if (fgets(volume, sizeof(volume), fp) != NULL) {
-        volume[strcspn(volume, "\n")] = 0;
+    if (fgets(volume, sizeof(volume), fp) == NULL) {
+        pclose(fp);
+        gtk_label_set_text(label, " Off");
+        return G_SOURCE_CONTINUE;
     }
+    volume[strcspn(volume, "\n")] = 0;
     pclose(fp);
 
     fp = popen("pactl get-sink-mute @DEFAULT_SINK@ | awk '{print $2}'", "r");
     if (!fp) {
-        gtk_label_set_text(label, " N/A");
+        gtk_label_set_text(label, " Off");
         return G_SOURCE_CONTINUE;
     }
 
     char mute_status[8];
-    if (fgets(mute_status, sizeof(mute_status), fp) != NULL) {
-        mute_status[strcspn(mute_status, "\n")] = 0;
+    if (fgets(mute_status, sizeof(mute_status), fp) == NULL) {
+        pclose(fp);
+        gtk_label_set_text(label, " Off");
+        return G_SOURCE_CONTINUE;
     }
+    mute_status[strcspn(mute_status, "\n")] = 0;
     pclose(fp);
 
     char label_text[64];
