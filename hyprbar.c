@@ -1,6 +1,6 @@
 // dep : gtk4 gtk4-layer-shell fontawesome iw pulseaudio brightnessctl radeontop
 // Penulis : Cilegordev & Dibuat bareng ChatGPT 🤖✨
-// import version 1.0.2
+// import version 1.0.3
 
 #include <gtk/gtk.h>
 #include <gtk-layer-shell/gtk-layer-shell.h>
@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 // Fungsi untuk Jam
 static gboolean update_time_label(gpointer user_data) {
@@ -262,56 +263,88 @@ static gboolean update_network_speed(gpointer user_data) {
 }
 
 // Fungsi untuk status batrai
+static int find_power_supply(const char *wanted_type, char *result, size_t size) {
+    DIR *dir;
+    struct dirent *entry;
+    char path[512];
+    char type[64];
+
+    dir = opendir("/sys/class/power_supply/");
+    if (!dir)
+        return -1;
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.')
+            continue;
+
+        snprintf(path, sizeof(path),
+                 "/sys/class/power_supply/%s/type",
+                 entry->d_name);
+
+        FILE *fp = fopen(path, "r");
+        if (!fp)
+            continue;
+
+        if (fgets(type, sizeof(type), fp)) {
+            type[strcspn(type, "\n")] = 0;
+            if (strcmp(type, wanted_type) == 0) {
+                snprintf(result, size,
+                         "/sys/class/power_supply/%s",
+                         entry->d_name);
+                fclose(fp);
+                closedir(dir);
+                return 0;
+            }
+        }
+        fclose(fp);
+    }
+
+    closedir(dir);
+    return -1;
+}
+
 static gboolean update_battery_status(gpointer user_data) {
     GtkLabel *label = GTK_LABEL(user_data);
-    FILE *fp;
-    char path[1035];
+    char battery_path[512];
+    char ac_path[512];
+    char fullpath[512];
+    char buffer[64];
 
-    if (access("/sys/class/power_supply/BAT0/capacity", F_OK) != 0) {
+    if (find_power_supply("Battery", battery_path, sizeof(battery_path)) != 0) {
         gtk_label_set_text(label, "-PC");
         return G_SOURCE_CONTINUE;
     }
 
-    fp = fopen("/sys/class/power_supply/BAT0/capacity", "r");
-    if (fp == NULL) {
+    snprintf(fullpath, sizeof(fullpath), "%s/capacity", battery_path);
+    FILE *fp = fopen(fullpath, "r");
+    if (!fp || !fgets(buffer, sizeof(buffer), fp)) {
         gtk_label_set_text(label, " Not Available");
+        if (fp) fclose(fp);
         return G_SOURCE_CONTINUE;
     }
+    buffer[strcspn(buffer, "\n")] = 0;
+    fclose(fp);
 
-    if (fgets(path, sizeof(path), fp) != NULL) {
-        path[strcspn(path, "\n")] = 0;
-        fclose(fp);
-
-        fp = fopen("/sys/class/power_supply/ADP0/online", "r");
-        if (fp == NULL) {
-            gtk_label_set_text(label, " Not Available");
-            return G_SOURCE_CONTINUE;
-        }
-
-        char charging_status[10];
-        if (fgets(charging_status, sizeof(charging_status), fp) != NULL) {
-            charging_status[strcspn(charging_status, "\n")] = 0;
-            char battery_status[50];
-
-            if (strcmp(charging_status, "1") == 0) {
-                snprintf(battery_status, sizeof(battery_status), " %s%%", path);
+    int charging = 0;
+    if (find_power_supply("Mains", ac_path, sizeof(ac_path)) == 0) {
+        snprintf(fullpath, sizeof(fullpath), "%s/online", ac_path);
+        fp = fopen(fullpath, "r");
+        if (fp) {
+            char online[8];
+            if (fgets(online, sizeof(online), fp)) {
+                charging = (online[0] == '1');
             }
-            else {
-                snprintf(battery_status, sizeof(battery_status), " %s%%", path);
-            }
-
-            gtk_label_set_text(label, battery_status);
+            fclose(fp);
         }
-        else {
-            gtk_label_set_text(label, " Not Available");
-        }
+    }
 
-        fclose(fp);
-    }
-    else {
-        gtk_label_set_text(label, " Not Available");
-        fclose(fp);
-    }
+    char status_text[64];
+    if (charging)
+        snprintf(status_text, sizeof(status_text), " %s%%", buffer);
+    else
+        snprintf(status_text, sizeof(status_text), " %s%%", buffer);
+
+    gtk_label_set_text(label, status_text);
 
     return G_SOURCE_CONTINUE;
 }
@@ -386,9 +419,38 @@ static gboolean update_brightness_status(gpointer user_data) {
     return G_SOURCE_CONTINUE;
 }
 
+// Fungsi untuk membaca Intel iGPU runtime
+static unsigned long read_intel_igpu_runtime() {
+    FILE *fp = fopen("/sys/kernel/debug/dri/0/i915_engine_info", "r");
+    if (!fp) return 0;
+
+    char line[256];
+    unsigned long runtime = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "rcs0", 4) == 0) {
+            fgets(line, sizeof(line), fp);
+            while (fgets(line, sizeof(line), fp)) {
+                if (strncmp(line, "\tRuntime:", 9) == 0) {
+                    sscanf(line, "\tRuntime: %lums", &runtime);
+                    break;
+                }
+                if (line[0] != '\t') break;
+            }
+            break;
+        }
+    }
+
+    fclose(fp);
+    return runtime;
+}
+
+// Belum termasuk amd gpu legacy
+
 // Fungsi untuk status hardware
 static gboolean update_resource_usage(GtkLabel *label) {
     static long long prev_idle = 0, prev_total = 0;
+    static unsigned long prev_gpu_runtime = 0;
     long long idle, total;
     char buf[256];
 
@@ -439,13 +501,15 @@ static gboolean update_resource_usage(GtkLabel *label) {
         snprintf(swap_text, sizeof(swap_text), "%s%%", swap_usage);
     }
 
-    char gpu_usage[16] = "N/A";
-    FILE *fp_gpu = fopen("/sys/class/drm/card0/device/gpu_busy_percent", "r");
-    if (fp_gpu && fgets(gpu_usage, sizeof(gpu_usage), fp_gpu)) {
-        gpu_usage[strcspn(gpu_usage, "\n")] = 0;
+    unsigned long curr_gpu_runtime = read_intel_igpu_runtime();
+    double gpu_usage = 0.0;
+    if (prev_gpu_runtime > 0) {
+        unsigned long delta = curr_gpu_runtime - prev_gpu_runtime;
+        gpu_usage = delta > 1000 ? 100.0 : (double)delta / 10.0;
     }
-    if (fp_gpu) fclose(fp_gpu);
+    prev_gpu_runtime = curr_gpu_runtime;
 
+    // --- Disk ---
     char disk_usage[16] = "N/A";
     FILE *fp_disk = popen("df / | awk 'NR==2 {print $5}'", "r");
     if (fp_disk && fgets(disk_usage, sizeof(disk_usage), fp_disk)) {
@@ -454,7 +518,7 @@ static gboolean update_resource_usage(GtkLabel *label) {
     if (fp_disk) fclose(fp_disk);
 
     snprintf(buf, sizeof(buf),
-             " %.0f%%   %s%%   %s%%   %s   %s",
+             " %.0f%%   %.0f%%   %s%%   %s   %s",
              cpu_usage, gpu_usage, ram_usage, swap_text, disk_usage);
 
     gtk_label_set_text(label, buf);
