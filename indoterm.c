@@ -1,9 +1,14 @@
+// dep : gtk3 vte
+// Penulis : Cilegordev & Dibuat bareng Claude 🤖✨
+// import version 0.8.1
+
 #include <gtk/gtk.h>
 #include <vte/vte.h>
 #include <stdlib.h>
 
 static GtkWidget *g_notebook = NULL;
 static GtkHeaderBar *g_header = NULL;
+static gint g_tab_counter = 0;
 
 static GtkWidget *create_terminal_tab(void);
 
@@ -46,31 +51,6 @@ on_window_destroy(GtkWidget *widget, gpointer data)
     (void) widget;
     (void) data;
     gtk_main_quit();
-}
-
-static void
-on_directory_changed(VteTerminal *terminal, gpointer user_data)
-{
-    GtkLabel *tab_label = GTK_LABEL(user_data);
-    const char *uri = vte_terminal_get_current_directory_uri(terminal);
-
-    if (uri == NULL || *uri == '\0') {
-        gtk_label_set_text(tab_label, "Terminal");
-        return;
-    }
-
-    gchar *path = g_filename_from_uri(uri, NULL, NULL);
-    if (path == NULL) {
-        gtk_label_set_text(tab_label, "Terminal");
-        return;
-    }
-
-    gchar *base = g_path_get_basename(path);
-    gtk_label_set_text(tab_label, base && *base ? base : path);
-    gtk_widget_set_tooltip_text(GTK_WIDGET(tab_label), path);
-
-    g_free(base);
-    g_free(path);
 }
 
 static void
@@ -136,7 +116,7 @@ on_info_clicked(GtkButton *button, gpointer user_data)
         "GCC-v%s\n"
         "GTK+-3.0-v%d.%d.%d\n"
         "VTE-2.91-v%d.%d.%d\n"
-        "Versi terminal saat ini : 0.8.0",
+        "Versi terminal saat ini : 0.8.1",
         __VERSION__,
         gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version(),
         vte_get_major_version(), vte_get_minor_version(), vte_get_micro_version());
@@ -230,7 +210,10 @@ create_terminal_tab(void)
 
     /* Label tab + tombol close kecil */
     GtkWidget *tab_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    GtkWidget *tab_label = gtk_label_new("Terminal");
+    g_tab_counter++;
+    gchar *tab_title = g_strdup_printf("Tab ke %d", g_tab_counter);
+    GtkWidget *tab_label = gtk_label_new(tab_title);
+    g_free(tab_title);
     gtk_label_set_ellipsize(GTK_LABEL(tab_label), PANGO_ELLIPSIZE_END);
     gtk_label_set_max_width_chars(GTK_LABEL(tab_label), 18);
     gtk_widget_set_halign(tab_label, GTK_ALIGN_START);
@@ -285,7 +268,6 @@ create_terminal_tab(void)
     g_strfreev(envp);
 
     g_signal_connect(terminal, "child-exited", G_CALLBACK(on_child_exited), page);
-    g_signal_connect(terminal, "current-directory-uri-changed", G_CALLBACK(on_directory_changed), tab_label);
     g_signal_connect(terminal, "button-press-event", G_CALLBACK(on_button_press), NULL);
     g_signal_connect_after(terminal, "paste-clipboard", G_CALLBACK(on_paste_clipboard), NULL);
 
