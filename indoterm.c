@@ -1,6 +1,6 @@
 // dep : gtk3 vte
 // Penulis : Cilegordev & Dibuat bareng Claude 🤖✨
-// import version 0.8.1
+// import version 0.8.2
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -116,7 +116,7 @@ on_info_clicked(GtkButton *button, gpointer user_data)
         "GCC-v%s\n"
         "GTK+-3.0-v%d.%d.%d\n"
         "VTE-2.91-v%d.%d.%d\n"
-        "Versi terminal saat ini : 0.8.1",
+        "Versi terminal saat ini : 0.8.2",
         __VERSION__,
         gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version(),
         vte_get_major_version(), vte_get_minor_version(), vte_get_micro_version());
@@ -250,6 +250,12 @@ create_terminal_tab(void)
     gchar *vte_version_str = g_strdup_printf("%d", vte_version);
     envp = g_environ_setenv(envp, "VTE_VERSION", vte_version_str, TRUE);
     g_free(vte_version_str);
+
+    /* Paksa TERM ke xterm-256color. Tanpa ini, TERM yang terwariskan dari
+     * proses indoterm sendiri bisa tidak menyatakan dukungan 256 warna,
+     * sehingga aplikasi seperti htop memetakan warna abu-abu/dim (dipakai
+     * untuk persentase core & memori) ke hitam dan jadi tak terlihat. */
+    envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
 
     vte_terminal_spawn_async(
         VTE_TERMINAL(terminal),
