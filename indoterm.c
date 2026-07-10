@@ -1,6 +1,6 @@
 // dep : gtk3 vte
 // Penulis : Cilegordev & Dibuat bareng Claude 🤖✨
-// import version 0.8.2
+// import version 0.8.3
 
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -116,7 +116,7 @@ on_info_clicked(GtkButton *button, gpointer user_data)
         "GCC-v%s\n"
         "GTK+-3.0-v%d.%d.%d\n"
         "VTE-2.91-v%d.%d.%d\n"
-        "Versi terminal saat ini : 0.8.2",
+        "Versi terminal saat ini : 0.8.3",
         __VERSION__,
         gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version(),
         vte_get_major_version(), vte_get_minor_version(), vte_get_micro_version());
@@ -239,10 +239,6 @@ create_terminal_tab(void)
     char *shell = g_strdup(shell_env && *shell_env ? shell_env : "/bin/bash");
     char *command[] = { shell, NULL };
 
-    /* Set VTE_VERSION supaya script integrasi shell bawaan sistem
-     * (mis. /etc/profile.d/vte.sh) mendeteksi ini sebagai VTE dan otomatis
-     * mengaktifkan pelaporan direktori aktif (OSC 7) ke terminal. Tanpa
-     * variabel ini, banyak script integrasi langsung skip diam-diam. */
     gchar **envp = g_get_environ();
     gint vte_version = vte_get_major_version() * 10000
                       + vte_get_minor_version() * 100
@@ -251,23 +247,19 @@ create_terminal_tab(void)
     envp = g_environ_setenv(envp, "VTE_VERSION", vte_version_str, TRUE);
     g_free(vte_version_str);
 
-    /* Paksa TERM ke xterm-256color. Tanpa ini, TERM yang terwariskan dari
-     * proses indoterm sendiri bisa tidak menyatakan dukungan 256 warna,
-     * sehingga aplikasi seperti htop memetakan warna abu-abu/dim (dipakai
-     * untuk persentase core & memori) ke hitam dan jadi tak terlihat. */
     envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
 
     vte_terminal_spawn_async(
         VTE_TERMINAL(terminal),
         VTE_PTY_DEFAULT,
-        g_get_home_dir(),      /* direktori kerja awal */
-        command,                /* argv shell */
-        envp,                    /* environment, termasuk VTE_VERSION */
+        g_get_home_dir(),
+        command,
+        envp,
         G_SPAWN_SEARCH_PATH,
-        NULL, NULL, NULL,        /* child setup */
-        -1,                       /* timeout, -1 = default */
-        NULL,                    /* cancellable */
-        on_spawn_complete,        /* callback */
+        NULL, NULL, NULL,
+        -1,
+        NULL,
+        on_spawn_complete,
         page
     );
     g_free(shell);
@@ -288,6 +280,9 @@ create_terminal_tab(void)
 int
 main(int argc, char *argv[])
 {
+    /* Paksa matikan ATI-SPI2-CORE */
+    g_setenv("NO_AT_BRIDGE", "1", TRUE);
+
     gtk_init(&argc, &argv);
 
     /* Jendela utama */
@@ -296,7 +291,7 @@ main(int argc, char *argv[])
     gtk_window_set_default_size(GTK_WINDOW(window), 824, 472);
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL);
 
-    /* Headerbar client-side decoration ala gnome-terminal */
+    /* Headerbar client-side decoration bawaan */
     GtkWidget *header = gtk_header_bar_new();
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), TRUE);
     gtk_header_bar_set_title(GTK_HEADER_BAR(header), "Terminal");
